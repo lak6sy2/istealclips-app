@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Presets — iStealClips{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+            <h1 class="text-xl sm:text-2xl font-bold">🎨 Manage Edit Presets</h1>
+            <p class="text-xs text-gray-400 mt-1">Configure background frames, branding logos, and visual templates</p>
+        </div>
+        <button onclick="openPresetModal()" class="bg-violet-600 hover:bg-violet-700 text-xs sm:text-sm px-4 py-2 rounded-xl font-bold transition">
+            + Create New Preset
+        </button>
+    </div>
+
+    <!-- Presets Grid -->
+    <div id="presets-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"></div>
+</div>
+
+<!-- Modal Form -->
+<div id="preset-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-dark-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md space-y-4">
+        <div class="flex justify-between items-center">
+            <h2 id="modal-title" class="text-lg font-bold text-violet-400">Create Preset</h2>
+            <button onclick="closePresetModal()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+
+        <form id="presetForm" onsubmit="savePreset(event)" class="space-y-4">
+            <input type="hidden" id="presetId">
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">PRESET NAME</label>
+                <input type="text" id="presetName" required placeholder="e.g. Gaming Vertical 1080x1920"
+                       class="w-full bg-dark-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">BACKGROUND IMAGE (1080x1920 PNG)</label>
+                <input type="file" id="bgFile" accept="image/*" class="text-xs text-gray-400 file:bg-dark-700 file:border-0 file:text-white file:px-3 file:py-1.5 file:rounded-lg">
+                <div id="bg-preview-box" class="mt-2 hidden">
+                    <span class="text-[10px] text-gray-500 block mb-1">Current Background:</span>
+                    <img id="bg-preview-img" class="h-20 rounded-lg border border-gray-700 object-cover">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">LOGO OVERLAY (TRANSPARENT PNG)</label>
+                <input type="file" id="logoFile" accept="image/*" class="text-xs text-gray-400 file:bg-dark-700 file:border-0 file:text-white file:px-3 file:py-1.5 file:rounded-lg">
+                <div id="logo-preview-box" class="mt-2 hidden">
+                    <span class="text-[10px] text-gray-500 block mb-1">Current Logo:</span>
+                    <img id="logo-preview-img" class="h-12 bg-dark-950 p-1 rounded-lg border border-gray-700 object-contain">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" onclick="closePresetModal()" class="bg-dark-800 text-gray-300 text-xs px-4 py-2 rounded-xl border border-gray-700">Cancel</button>
+                <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white text-xs px-5 py-2 rounded-xl font-bold">Save Preset</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let loadedPresetsList = [];
+
+async function loadPresets() {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    const grid = document.getElementById('presets-grid');
+
+    loadedPresetsList = data.presets || [];
+    if (loadedPresetsList.length === 0) {
+        grid.innerHTML = '<p class="text-xs text-gray-500 col-span-full">No presets found. Create your first preset!</p>';
+        return;
+    }
+
+    grid.innerHTML = loadedPresetsList.map(p => `
+        <div class="bg-dark-800 rounded-2xl p-4 border border-gray-800 space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-violet-400 truncate">${p.name}</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="openEditPresetModal('${p.id}')" class="text-blue-400 text-xs font-semibold hover:underline">✏️ Edit</button>
+                    <button onclick="deletePreset('${p.id}')" class="text-red-400 text-xs hover:underline">🗑️ Delete</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <!-- Background Preview -->
+                <div class="bg-dark-900 p-2 rounded-xl border border-gray-800 flex flex-col items-center justify-center min-h-[100px] text-center">
+                    ${p.bg_url
+                        ? `<img src="${p.bg_url}" class="h-20 w-full object-cover rounded-lg border border-gray-700">
+                           <span class="text-[10px] text-gray-400 mt-1">🖼️ Background</span>`
+                        : `<div class="h-16 w-full bg-black rounded-lg flex items-center justify-center text-gray-500 text-xs font-mono">Solid Black</div>
+                           <span class="text-[10px] text-gray-500 mt-1">🖤 Solid BG</span>`
+                    }
+                </div>
+
+                <!-- Logo Preview -->
+                <div class="bg-dark-900 p-2 rounded-xl border border-gray-800 flex flex-col items-center justify-center min-h-[100px] text-center">
+                    ${p.logo_url
+                        ? `<img src="${p.logo_url}" class="h-12 max-w-full object-contain p-1 bg-dark-950 rounded-lg border border-gray-700">
+                           <span class="text-[10px] text-gray-400 mt-1">🏷️ Logo Overlay</span>`
+                        : `<div class="h-16 w-full flex items-center justify-center text-gray-600 text-xs">No Logo</div>
+                           <span class="text-[10px] text-gray-500 mt-1">No Logo</span>`
+                    }
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openPresetModal() {
+    document.getElementById('presetForm').reset();
+    document.getElementById('presetId').value = '';
+    document.getElementById('modal-title').textContent = 'Create New Preset';
+    document.getElementById('bg-preview-box').classList.add('hidden');
+    document.getElementById('logo-preview-box').classList.add('hidden');
+    document.getElementById('preset-modal').classList.remove('hidden');
+}
+
+function openEditPresetModal(id) {
+    const p = loadedPresetsList.find(x => x.id === id);
+    if (!p) return;
+
+    document.getElementById('presetForm').reset();
+    document.getElementById('presetId').value = p.id;
+    document.getElementById('presetName').value = p.name;
+    document.getElementById('modal-title').textContent = `Edit Preset: ${p.name}`;
+
+    if (p.bg_url) {
+        document.getElementById('bg-preview-img').src = p.bg_url;
+        document.getElementById('bg-preview-box').classList.remove('hidden');
+    } else {
+        document.getElementById('bg-preview-box').classList.add('hidden');
+    }
+
+    if (p.logo_url) {
+        document.getElementById('logo-preview-img').src = p.logo_url;
+        document.getElementById('logo-preview-box').classList.remove('hidden');
+    } else {
+        document.getElementById('logo-preview-box').classList.add('hidden');
+    }
+
+    document.getElementById('preset-modal').classList.remove('hidden');
+}
+
+function closePresetModal() {
+    document.getElementById('preset-modal').classList.add('hidden');
+}
+
+async function savePreset(e) {
+    e.preventDefault();
+    const presetId = document.getElementById('presetId').value;
+    const name = document.getElementById('presetName').value.trim();
+    const bgFile = document.getElementById('bgFile').files[0];
+    const logoFile = document.getElementById('logoFile').files[0];
+
+    const formData = new FormData();
+    formData.append('name', name);
+    if (bgFile) formData.append('background', bgFile);
+    if (logoFile) formData.append('logo', logoFile);
+
+    let res;
+    if (presetId) {
+        // Edit PUT
+        res = await fetch(`/api/presets/${presetId}`, {
+            method: 'PUT',
+            body: formData
+        });
+    } else {
+        // Create POST
+        res = await fetch('/api/presets', {
+            method: 'POST',
+            body: formData
+        });
+    }
+
+    if (res.ok) {
+        showToast(presetId ? 'Preset updated! 🎨' : 'Preset created! 🎨', 'success');
+        closePresetModal();
+        loadPresets();
+    } else {
+        showToast('Failed to save preset', 'error');
+    }
+}
+
+async function deletePreset(id) {
+    if (!confirm('Are you sure you want to delete this preset?')) return;
+    await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+    loadPresets();
+    showToast('Preset deleted', 'info');
+}
+
+loadPresets();
+</script>
+{% endblock %}

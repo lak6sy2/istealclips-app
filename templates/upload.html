@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Upload — iStealClips{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <h1 class="text-xl sm:text-2xl font-bold">📤 Upload Raw Clips</h1>
+
+    <!-- Drop Zone -->
+    <div id="dropzone"
+         class="dropzone border-2 border-dashed border-gray-700 rounded-2xl p-6 sm:p-12 text-center cursor-pointer hover:border-violet-500 transition-all"
+         onclick="document.getElementById('fileInput').click()">
+        <div class="text-4xl sm:text-5xl mb-3">🎬</div>
+        <p class="text-base sm:text-lg text-gray-300">Drop clips here or <span class="text-violet-400 font-semibold">click to browse</span></p>
+        <p class="text-xs sm:text-sm text-gray-500 mt-1">MP4, MOV, MKV, WebM, AVI — No size limit</p>
+        <input type="file" id="fileInput" multiple accept="video/*" class="hidden" onchange="handleFiles(this.files)">
+    </div>
+
+    <!-- Upload Progress -->
+    <div id="upload-progress" class="space-y-2 hidden"></div>
+
+    <!-- Uploaded Clips Grid -->
+    <div id="raw-clips-section" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base sm:text-lg font-semibold text-gray-300">📁 Uploaded Clips</h2>
+            <a href="/edit" class="bg-violet-600 hover:bg-violet-700 text-xs sm:text-sm px-4 sm:px-5 py-2 rounded-lg font-semibold transition">
+                Go to Bulk Edit →
+            </a>
+        </div>
+        <div id="raw-clips-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropzone = document.getElementById('dropzone');
+
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-violet-500', 'bg-dark-800'); });
+dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('border-violet-500', 'bg-dark-800'); });
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('border-violet-500', 'bg-dark-800');
+    handleFiles(e.dataTransfer.files);
+});
+
+async function handleFiles(files) {
+    const progressContainer = document.getElementById('upload-progress');
+    progressContainer.classList.remove('hidden');
+
+    for (const file of files) {
+        const id = Math.random().toString(36).substr(2, 6);
+        progressContainer.insertAdjacentHTML('beforeend', `
+            <div id="prog-${id}" class="bg-dark-800 rounded-lg p-3 flex items-center gap-3">
+                <span class="text-xs sm:text-sm text-gray-300 truncate flex-1">${file.name}</span>
+                <div class="w-24 sm:w-48 bg-gray-700 rounded-full h-2"><div id="bar-${id}" class="bg-violet-500 h-2 rounded-full transition-all" style="width:0%"></div></div>
+                <span id="pct-${id}" class="text-xs text-gray-400 w-10 text-right">0%</span>
+            </div>
+        `);
+
+        await uploadFile(file, id);
+    }
+
+    loadRawClips();
+}
+
+function uploadFile(file, id) {
+    return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append('file', file);
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                document.getElementById(`bar-${id}`).style.width = pct + '%';
+                document.getElementById(`pct-${id}`).textContent = pct + '%';
+            }
+        };
+        xhr.onload = () => {
+            const el = document.getElementById(`prog-${id}`);
+            if (xhr.status === 200) {
+                el.classList.add('border', 'border-green-600');
+                document.getElementById(`pct-${id}`).textContent = '✅';
+            } else {
+                el.classList.add('border', 'border-red-600');
+                document.getElementById(`pct-${id}`).textContent = '❌';
+            }
+            resolve();
+        };
+        xhr.onerror = () => {
+            document.getElementById(`pct-${id}`).textContent = '❌';
+            resolve();
+        };
+        xhr.open('POST', '/api/upload');
+        xhr.send(formData);
+    });
+}
+
+async function loadRawClips() {
+    const res = await fetch('/api/clips/raw');
+    const data = await res.json();
+    const grid = document.getElementById('raw-clips-grid');
+    const section = document.getElementById('raw-clips-section');
+
+    if (data.clips.length === 0) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+
+    grid.innerHTML = data.clips.map(c => `
+        <div class="clip-card bg-dark-800 rounded-xl overflow-hidden group relative border border-gray-800">
+            <div class="aspect-[9/16] bg-dark-700 flex items-center justify-center relative">
+                ${c.has_thumbnail
+                    ? `<img src="/api/clips/raw/${c.clip_id}/thumbnail" class="w-full h-full object-cover">`
+                    : `<span class="text-3xl sm:text-4xl">🎥</span>`
+                }
+                <span class="absolute bottom-1 right-1 bg-black/70 text-[9px] sm:text-[10px] text-gray-300 px-1.5 py-0.5 rounded">🕒 ${formatTimeAgo(c.mtime)}</span>
+            </div>
+            <div class="p-2">
+                <p class="text-xs text-gray-300 truncate font-medium">${c.filename}</p>
+                <div class="flex items-center justify-between text-[10px] text-gray-500 mt-0.5">
+                    <span>${c.size_mb} MB</span>
+                    <span class="text-violet-400">${formatTimeAgo(c.mtime)}</span>
+                </div>
+            </div>
+            <button onclick="deleteRawClip('${c.clip_id}')" class="absolute top-2 right-2 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center transition">✕</button>
+        </div>
+    `).join('');
+}
+
+async function deleteRawClip(clipId) {
+    await fetch(`/api/clips/raw/${clipId}`, { method: 'DELETE' });
+    loadRawClips();
+    showToast('Clip deleted', 'info');
+}
+
+// Load on page ready
+loadRawClips();
+</script>
+{% endblock %}

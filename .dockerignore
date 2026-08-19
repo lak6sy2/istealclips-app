@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+uploads/raw/*
+uploads/edited/*
+uploads/temp/*
+temp/*
+*.log

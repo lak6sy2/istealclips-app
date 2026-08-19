@@ -1,0 +1,16 @@
+uploads/raw/*
+uploads/edited/*
+uploads/temp/*
+temp/*
+!uploads/raw/.gitkeep
+!uploads/edited/.gitkeep
+!uploads/temp/.gitkeep
+!temp/.gitkeep
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.log
+__pycache__/
+.git/

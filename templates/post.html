@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Post Clips — iStealClips{% endblock %}
+{% block content %}
+<div class="space-y-6 max-w-4xl mx-auto">
+    <h1 class="text-xl sm:text-2xl font-bold">📲 Post Clips to Buffer Accounts</h1>
+
+    <!-- Selected Clips Preview Strip -->
+    <div class="bg-dark-800 rounded-2xl p-4 border border-gray-800 space-y-2">
+        <h2 class="text-xs font-semibold text-gray-400">SELECTED CLIPS FOR POSTING</h2>
+        <div id="selected-clips-strip" class="flex gap-3 overflow-x-auto py-2"></div>
+    </div>
+
+    <!-- Account Selection & Universal Caption Form -->
+    <div class="bg-dark-800 rounded-2xl p-4 sm:p-6 border border-gray-800 space-y-4">
+        <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-2">CHOOSE BUFFER ACCOUNTS / PROFILES</label>
+            <div id="accounts-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2"></div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">UNIVERSAL CAPTION (WITH HASHTAGS)</label>
+            <textarea id="captionTextarea" rows="3" placeholder="Write caption for all reels... #reels #viral"
+                      class="w-full bg-dark-900 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 transition"></textarea>
+        </div>
+
+        <button onclick="startPostingProcess()" id="postBtn"
+                class="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+            🚀 POST ALL SELECTED CLIPS
+        </button>
+    </div>
+
+    <!-- Live Post Status Table -->
+    <div id="status-section" class="bg-dark-800 rounded-2xl p-4 sm:p-6 border border-gray-800 space-y-3 hidden">
+        <h2 class="text-sm font-semibold text-gray-300">📊 Live Buffer Posting Status</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="border-b border-gray-700 text-gray-400">
+                        <th class="py-2 px-2">Clip</th>
+                        <th class="py-2 px-2">Account</th>
+                        <th class="py-2 px-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="status-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const selectedClipIds = (urlParams.get('clips') || '').split(',').filter(Boolean);
+
+async function loadPostPageData() {
+    // Render selected clips strip
+    const strip = document.getElementById('selected-clips-strip');
+    if (selectedClipIds.length === 0) {
+        strip.innerHTML = '<p class="text-xs text-gray-500">No clips selected. <a href="/edited" class="text-violet-400 underline">Select from gallery</a></p>';
+    } else {
+        strip.innerHTML = selectedClipIds.map(id => `
+            <div class="w-20 aspect-[9/16] bg-dark-700 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700 relative">
+                <video src="/api/clips/edited/${id}/preview" muted class="w-full h-full object-cover"></video>
+            </div>
+        `).join('');
+    }
+
+    // Load accounts
+    const aRes = await fetch('/api/accounts/profiles');
+    const aData = await aRes.json();
+    const aList = document.getElementById('accounts-list');
+
+    const profiles = aData.profiles || [];
+    if (profiles.length === 0) {
+        aList.innerHTML = '<p class="text-xs text-gray-500 col-span-full">No connected accounts. <a href="/accounts" class="text-violet-400 underline">Add Buffer Account</a></p>';
+    } else {
+        aList.innerHTML = profiles.map(p => `
+            <label class="flex items-center gap-2 bg-dark-900 p-3 rounded-xl border border-gray-800 cursor-pointer hover:border-gray-700 transition">
+                <input type="checkbox" value="${p.profile_id}" class="account-chk rounded bg-dark-800 border-gray-700 text-violet-600 focus:ring-0" checked>
+                <div class="truncate">
+                    <p class="text-xs font-semibold text-gray-200 truncate">${p.name || 'Instagram Account'}</p>
+                    <p class="text-[10px] text-gray-500">${p.service || 'instagram'} (${p.type || 'business'})</p>
+                </div>
+            </label>
+        `).join('');
+    }
+}
+
+async function startPostingProcess() {
+    const accountIds = Array.from(document.querySelectorAll('.account-chk:checked')).map(c => c.value);
+    const caption = document.getElementById('captionTextarea').value.trim();
+
+    if (selectedClipIds.length === 0) {
+        showToast('No clips selected for posting!', 'warning');
+        return;
+    }
+
+    if (accountIds.length === 0) {
+        showToast('Please select at least one Buffer account!', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('postBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Posting to Buffer...';
+
+    const res = await fetch('/api/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            clip_ids: selectedClipIds,
+            account_ids: accountIds,
+            caption: caption
+        })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+        showToast('Posting started! 🚀', 'success');
+        document.getElementById('status-section').classList.remove('hidden');
+        pollPostStatus(data.job_id);
+    } else {
+        showToast(data.detail || 'Posting failed', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '🚀 POST ALL SELECTED CLIPS';
+    }
+}
+
+async function pollPostStatus(jobId) {
+    const interval = setInterval(async () => {
+        const res = await fetch(`/api/post/status/${jobId}`);
+        const data = await res.json();
+
+        const tbody = document.getElementById('status-table-body');
+        tbody.innerHTML = Object.values(data.items || {}).map(item => `
+            <tr class="border-b border-gray-800">
+                <td class="py-2 px-2 text-gray-300 font-medium truncate max-w-[120px]">${item.clip_file}</td>
+                <td class="py-2 px-2 text-gray-400 truncate max-w-[100px]">${item.account_name}</td>
+                <td class="py-2 px-2">
+                    ${item.status === 'posted' ? '<span class="text-green-400 font-bold">✅ Posted</span>' : ''}
+                    ${item.status === 'failed' ? `<span class="text-red-400 font-bold">❌ ${item.message}</span>` : ''}
+                    ${item.status === 'posting' ? '<span class="text-yellow-400 font-bold animate-pulse">⏳ Posting...</span>' : ''}
+                    ${item.status === 'queued' ? '<span class="text-gray-500">⏳ Queued</span>' : ''}
+                </td>
+            </tr>
+        `).join('');
+
+        if (data.status === 'complete') {
+            clearInterval(interval);
+            showToast('Posting job complete! 🎉', 'success');
+            document.getElementById('postBtn').disabled = false;
+            document.getElementById('postBtn').innerHTML = '🚀 POST ALL SELECTED CLIPS';
+        }
+    }, 2000);
+}
+
+loadPostPageData();
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+
+# Uploaded user files (don't push to GitHub)
+uploads/raw/*
+uploads/edited/*
+uploads/temp/*
+temp/*
+!uploads/raw/.gitkeep
+!uploads/edited/.gitkeep
+!uploads/temp/.gitkeep
+!temp/.gitkeep
+
+# Data files (have sensitive tokens)
+data/buffer_config.json
+data/auto_liker_data.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

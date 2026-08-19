@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Bulk Edit — iStealClips{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h1 class="text-xl sm:text-2xl font-bold">✂️ Bulk Edit Clips</h1>
+        <div class="flex items-center gap-2">
+            <button onclick="selectAll()" class="bg-dark-800 hover:bg-dark-700 text-xs px-3 py-1.5 rounded-lg border border-gray-700 transition">Select All</button>
+            <button onclick="deselectAll()" class="bg-dark-800 hover:bg-dark-700 text-xs px-3 py-1.5 rounded-lg border border-gray-700 transition">Deselect All</button>
+        </div>
+    </div>
+
+    <!-- Clips Selection Grid -->
+    <div id="edit-clips-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4"></div>
+
+    <!-- Processing Controls Card -->
+    <div class="bg-dark-800 rounded-2xl p-4 sm:p-6 border border-gray-800 space-y-4">
+        <h2 class="text-sm sm:text-base font-semibold text-gray-300">🎨 Select Presets & Options</h2>
+
+        <!-- Preset Selection (Checkboxes with Select All Presets toggle) -->
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <label class="block text-xs font-semibold text-gray-400">CHOOSE PRESETS TO APPLY</label>
+                <button onclick="toggleAllPresets()" id="btn-toggle-all-presets" class="text-xs text-violet-400 hover:underline">Select All Presets</button>
+            </div>
+            <div id="presets-checkboxes-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2"></div>
+        </div>
+
+        <!-- Universal Caption Input -->
+        <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">UNIVERSAL CAPTION (OPTIONAL)</label>
+            <input type="text" id="captionInput" placeholder="Enter universal caption text..."
+                   class="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 transition">
+        </div>
+
+        <!-- Process Action Button -->
+        <button onclick="processSelected()" id="processBtn"
+                class="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+            🚀 Apply Presets & Process Selected Clips
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allPresets = [];
+let allSelectedPresets = false;
+
+async function loadClipsAndPresets() {
+    // Load presets
+    const pRes = await fetch('/api/presets');
+    const pData = await pRes.json();
+    allPresets = pData.presets || [];
+    
+    const pGrid = document.getElementById('presets-checkboxes-grid');
+    if (allPresets.length === 0) {
+        pGrid.innerHTML = '<p class="text-xs text-gray-500 col-span-full">No presets found. <a href="/presets" class="text-violet-400 underline">Create a preset first</a></p>';
+    } else {
+        pGrid.innerHTML = allPresets.map((p, idx) => `
+            <label class="flex items-center gap-2 bg-dark-900 p-2.5 rounded-xl border border-gray-800 cursor-pointer hover:border-gray-700 transition">
+                <input type="checkbox" value="${p.id}" class="preset-chk rounded bg-dark-800 border-gray-700 text-violet-600 focus:ring-0" ${idx === 0 ? 'checked' : ''}>
+                <span class="text-xs font-medium text-gray-200 truncate">${p.name}</span>
+            </label>
+        `).join('');
+    }
+
+    // Load clips
+    const cRes = await fetch('/api/clips/raw');
+    const cData = await cRes.json();
+    const cGrid = document.getElementById('edit-clips-grid');
+
+    if (cData.clips.length === 0) {
+        cGrid.innerHTML = '<p class="text-xs text-gray-500 col-span-full text-center py-8">No uploaded clips. <a href="/" class="text-violet-400 underline">Upload clips first</a></p>';
+        return;
+    }
+
+    cGrid.innerHTML = cData.clips.map(c => `
+        <div class="clip-card bg-dark-800 rounded-xl overflow-hidden group relative border border-gray-800">
+            <div class="aspect-[9/16] bg-dark-700 flex items-center justify-center relative">
+                ${c.has_thumbnail
+                    ? `<img src="/api/clips/raw/${c.clip_id}/thumbnail" class="w-full h-full object-cover">`
+                    : `<span class="text-3xl sm:text-4xl">🎥</span>`
+                }
+                <input type="checkbox" value="${c.clip_id}" class="clip-chk absolute top-2 left-2 w-4 h-4 rounded text-violet-600 focus:ring-0">
+                <span class="absolute bottom-1 right-1 bg-black/70 text-[9px] sm:text-[10px] text-gray-300 px-1.5 py-0.5 rounded">🕒 ${formatTimeAgo(c.mtime)}</span>
+            </div>
+            <div class="p-2">
+                <p class="text-xs text-gray-300 truncate font-medium">${c.filename}</p>
+                <p class="text-[10px] text-gray-500">${c.size_mb} MB</p>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectAll() {
+    document.querySelectorAll('.clip-chk').forEach(c => c.checked = true);
+}
+
+function deselectAll() {
+    document.querySelectorAll('.clip-chk').forEach(c => c.checked = false);
+}
+
+function toggleAllPresets() {
+    allSelectedPresets = !allSelectedPresets;
+    document.querySelectorAll('.preset-chk').forEach(c => c.checked = allSelectedPresets);
+    document.getElementById('btn-toggle-all-presets').textContent = allSelectedPresets ? 'Deselect All Presets' : 'Select All Presets';
+}
+
+async function processSelected() {
+    const selectedClips = Array.from(document.querySelectorAll('.clip-chk:checked')).map(c => c.value);
+    const selectedPresets = Array.from(document.querySelectorAll('.preset-chk:checked')).map(c => c.value);
+    const caption = document.getElementById('captionInput').value.trim();
+
+    if (selectedClips.length === 0) {
+        showToast('Please select at least one clip!', 'warning');
+        return;
+    }
+
+    if (selectedPresets.length === 0) {
+        showToast('Please select at least one preset!', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('processBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Processing Clips...';
+
+    const res = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            clip_ids: selectedClips,
+            preset_ids: selectedPresets,
+            caption: caption
+        })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+        showToast('Processing started! 🚀', 'success');
+        window.location.href = '/edited';
+    } else {
+        showToast(data.detail || 'Processing failed', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Apply Presets & Process Selected Clips';
+    }
+}
+
+loadClipsAndPresets();
+</script>
+{% endblock %}
